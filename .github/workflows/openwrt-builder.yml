@@ -107,6 +107,7 @@ jobs:
       id: package
       run: |
         cd openwrt
+        echo "CONFIG_ALL_KMODS=y" >> .config
         make defconfig
         make download -j"$(nproc)"
         find dl -size -1024c -exec ls -l {} \;
@@ -116,6 +117,8 @@ jobs:
       id: compile
       run: |
         cd openwrt
+        echo "CONFIG_ALL_KMODS=y" >> .config
+        make defconfig
         echo -e "$(nproc) thread compile"
         make -j"$(nproc)" || make -j1 || make -j1 V=s
         echo "status=success" >> "$GITHUB_OUTPUT"
@@ -131,6 +134,7 @@ jobs:
         fi
 
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
+        echo "BUILD_DATE=$(date +"%Y%m%d-%H%M")" >> "$GITHUB_ENV"
         echo "BUILD_TIME=$(date +"%Y-%m-%d %H:%M:%S %Z")" >> "$GITHUB_ENV"
 
         # Firmware Version
@@ -142,6 +146,10 @@ jobs:
         fi
         echo "FIRMWARE_VERSION=$FIRMWARE_VERSION" >> "$GITHUB_ENV"
 
+        SAFE_FIRMWARE_VERSION="$(echo "$FIRMWARE_VERSION" | tr ' /:' '---' | tr -cd '[:alnum:]._+-')"
+        [ -n "$SAFE_FIRMWARE_VERSION" ] || SAFE_FIRMWARE_VERSION="unknown"
+        echo "SAFE_FIRMWARE_VERSION=$SAFE_FIRMWARE_VERSION" >> "$GITHUB_ENV"
+
         # Kernel Package Version
         KERNEL_PKG_FILE="$(find bin/targets -type f \( -name 'kernel_*.apk' -o -name 'kernel-*.apk' \) | head -n 1)"
         if [ -n "$KERNEL_PKG_FILE" ]; then
@@ -152,6 +160,10 @@ jobs:
           KERNEL_PKG_VERSION="unknown"
         fi
         echo "KERNEL_PKG_VERSION=$KERNEL_PKG_VERSION" >> "$GITHUB_ENV"
+
+        SAFE_KERNEL_PKG_VERSION="$(echo "$KERNEL_PKG_VERSION" | tr ' /:' '---' | tr -cd '[:alnum:]._+-')"
+        [ -n "$SAFE_KERNEL_PKG_VERSION" ] || SAFE_KERNEL_PKG_VERSION="unknown"
+        echo "SAFE_KERNEL_PKG_VERSION=$SAFE_KERNEL_PKG_VERSION" >> "$GITHUB_ENV"
 
         echo "CONFIG_FILE_URL=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/blob/${GITHUB_REF_NAME}/${CONFIG_FILE}" >> "$GITHUB_ENV"
         echo "BUILD_LOG_URL=${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}" >> "$GITHUB_ENV"
@@ -166,14 +178,36 @@ jobs:
       run: |
         FIRMWARE_DIR="$(find openwrt/bin/targets -type d -mindepth 2 -maxdepth 2 | head -n 1)"
         [ -n "$FIRMWARE_DIR" ] || exit 1
-        cd "$FIRMWARE_DIR"
-        rm -rf packages
-        echo "FIRMWARE=$PWD" >> "$GITHUB_ENV"
+        echo "FIRMWARE=$FIRMWARE_DIR" >> "$GITHUB_ENV"
 
-        SYSUPGRADE_FILE="$(find "$PWD" -type f -name '*sysupgrade*.bin' | head -n 1)"
+        SYSUPGRADE_FILE="$(find "$FIRMWARE_DIR" -type f -name '*sysupgrade*.bin' | head -n 1)"
         [ -n "$SYSUPGRADE_FILE" ] || { echo "No sysupgrade.bin found!"; exit 1; }
-
         echo "SYSUPGRADE_FILE=$SYSUPGRADE_FILE" >> "$GITHUB_ENV"
+
+        PACKAGES_DIR="$FIRMWARE_DIR/packages"
+        [ -d "$PACKAGES_DIR" ] || { echo "No packages directory found!"; exit 1; }
+
+        STAGING_DIR="$GITHUB_WORKSPACE/package-output"
+        ARCHIVE_ROOT="immortalwrt_${DEVICE_LABEL}_${SAFE_FIRMWARE_VERSION}_kernel-${SAFE_KERNEL_PKG_VERSION}_${BUILD_DATE}"
+        ARCHIVE_DIR="$STAGING_DIR/$ARCHIVE_ROOT"
+
+        rm -rf "$STAGING_DIR"
+        mkdir -p "$ARCHIVE_DIR/firmware"
+        mkdir -p "$ARCHIVE_DIR/kmods"
+
+        cp -f "$SYSUPGRADE_FILE" "$ARCHIVE_DIR/firmware/"
+        cp -a "$PACKAGES_DIR/." "$ARCHIVE_DIR/kmods/"
+
+        TAR_FILE="$GITHUB_WORKSPACE/${ARCHIVE_ROOT}.tar.gz"
+        ZIP_FILE="$GITHUB_WORKSPACE/${ARCHIVE_ROOT}.zip"
+
+        tar -C "$STAGING_DIR" -czf "$TAR_FILE" "$ARCHIVE_ROOT"
+        cd "$STAGING_DIR"
+        zip -rq "$ZIP_FILE" "$ARCHIVE_ROOT"
+
+        echo "ARCHIVE_ROOT=$ARCHIVE_ROOT" >> "$GITHUB_ENV"
+        echo "PACKAGE_TAR=$TAR_FILE" >> "$GITHUB_ENV"
+        echo "PACKAGE_ZIP=$ZIP_FILE" >> "$GITHUB_ENV"
         echo "status=success" >> "$GITHUB_OUTPUT"
 
     - name: 📤 Upload firmware directory (artifact)
@@ -182,6 +216,15 @@ jobs:
       with:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
+
+    - name: 📦 Upload packaged bundles (artifact)
+      uses: actions/upload-artifact@v4
+      if: steps.organize.outputs.status == 'success' && !cancelled()
+      with:
+        name: OpenWrt_packages${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        path: |
+          ${{ env.PACKAGE_TAR }}
+          ${{ env.PACKAGE_ZIP }}
 
     - name: 🏷️ Generate release tag and notes
       id: tag
@@ -192,7 +235,7 @@ jobs:
         {
           echo "## ImmortalWrt Firmware Build"
           echo ""
-          echo "This release provides the latest sysupgrade image and kernel module bundles for ${DEVICE_LABEL}."
+          echo "This release provides the latest sysupgrade image and packaged kernel module bundles for ${DEVICE_LABEL}."
           echo ""
           echo "### Build Information"
           echo "- Source Repository: [${REPO_URL}](${REPO_URL})"
@@ -206,11 +249,16 @@ jobs:
           echo ""
           echo "### Included Assets"
           echo "- Sysupgrade firmware image"
+          echo "- Packaged firmware and kmod repository (.tar.gz)"
+          echo "- Packaged firmware and kmod repository (.zip)"
+          echo ""
+          echo "### Bundle Name"
+          echo "- ${ARCHIVE_ROOT}"
         } > release.txt
 
         echo "status=success" >> "$GITHUB_OUTPUT"
 
-    - name: 🚀 Upload sysupgrade firmware to release
+    - name: 🚀 Upload sysupgrade firmware and bundles to release
       uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && github.event.inputs.publish_release == 'true' && !cancelled()
       env:
@@ -218,7 +266,10 @@ jobs:
       with:
         tag_name: ${{ steps.tag.outputs.release_tag }}
         body_path: release.txt
-        files: ${{ env.SYSUPGRADE_FILE }}
+        files: |
+          ${{ env.SYSUPGRADE_FILE }}
+          ${{ env.PACKAGE_TAR }}
+          ${{ env.PACKAGE_ZIP }}
         prerelease: ${{ github.event.inputs.prerelease == 'true' }}
 
     - name: 🧹 Delete old workflow runs
