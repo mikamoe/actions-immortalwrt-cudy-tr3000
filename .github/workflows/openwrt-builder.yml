@@ -107,8 +107,24 @@ jobs:
       id: package
       run: |
         cd openwrt
-        echo "CONFIG_ALL_KMODS=y" >> .config
+
+        # Base defconfig first
         make defconfig
+
+        # Prepare package metadata
+        make -s prepare-tmpinfo
+
+        # Force-enable all kmod packages for the current target
+        ./scripts/package-metadata.pl kconfig tmp/.packageinfo > tmp/.config-package.in
+        grep -E '^config PACKAGE_kmod-' tmp/.config-package.in \
+          | sed -E 's/^config PACKAGE_/CONFIG_PACKAGE_/; s/$/=m/' >> .config
+
+        # Keep global all-kmods switch enabled as well
+        echo "CONFIG_ALL_KMODS=y" >> .config
+
+        # Re-expand final config
+        make defconfig
+
         make download -j"$(nproc)"
         find dl -size -1024c -exec ls -l {} \;
         find dl -size -1024c -exec rm -f {} \;
@@ -117,8 +133,15 @@ jobs:
       id: compile
       run: |
         cd openwrt
+
+        # Re-apply all-kmod selection to avoid any drift
+        make -s prepare-tmpinfo
+        ./scripts/package-metadata.pl kconfig tmp/.packageinfo > tmp/.config-package.in
+        grep -E '^config PACKAGE_kmod-' tmp/.config-package.in \
+          | sed -E 's/^config PACKAGE_/CONFIG_PACKAGE_/; s/$/=m/' >> .config
         echo "CONFIG_ALL_KMODS=y" >> .config
         make defconfig
+
         echo -e "$(nproc) thread compile"
         make -j"$(nproc)" || make -j1 || make -j1 V=s
         echo "status=success" >> "$GITHUB_OUTPUT"
@@ -188,14 +211,12 @@ jobs:
         [ -d "$PACKAGES_DIR" ] || { echo "No packages directory found!"; exit 1; }
 
         STAGING_DIR="$GITHUB_WORKSPACE/package-output"
-        ARCHIVE_ROOT="immortalwrt_${DEVICE_LABEL}_${SAFE_FIRMWARE_VERSION}_kernel-${SAFE_KERNEL_PKG_VERSION}_${BUILD_DATE}"
+        ARCHIVE_ROOT="immortalwrt-kmods_${DEVICE_LABEL}_${SAFE_FIRMWARE_VERSION}_kernel-${SAFE_KERNEL_PKG_VERSION}_${BUILD_DATE}"
         ARCHIVE_DIR="$STAGING_DIR/$ARCHIVE_ROOT"
 
         rm -rf "$STAGING_DIR"
-        mkdir -p "$ARCHIVE_DIR/firmware"
         mkdir -p "$ARCHIVE_DIR/kmods"
 
-        cp -f "$SYSUPGRADE_FILE" "$ARCHIVE_DIR/firmware/"
         cp -a "$PACKAGES_DIR/." "$ARCHIVE_DIR/kmods/"
 
         TAR_FILE="$GITHUB_WORKSPACE/${ARCHIVE_ROOT}.tar.gz"
@@ -217,11 +238,11 @@ jobs:
         name: OpenWrt_firmware${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: ${{ env.FIRMWARE }}
 
-    - name: 📦 Upload packaged bundles (artifact)
+    - name: 📦 Upload packaged kmods bundles (artifact)
       uses: actions/upload-artifact@v4
       if: steps.organize.outputs.status == 'success' && !cancelled()
       with:
-        name: OpenWrt_packages${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
+        name: OpenWrt_kmods${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
         path: |
           ${{ env.PACKAGE_TAR }}
           ${{ env.PACKAGE_ZIP }}
@@ -233,32 +254,37 @@ jobs:
         echo "release_tag=$(date +"%Y.%m.%d-%H%M%S")" >> "$GITHUB_OUTPUT"
 
         {
-          echo "## ImmortalWrt Firmware Build"
+          echo "## 🚀 ImmortalWrt Firmware Build"
           echo ""
-          echo "This release provides the latest sysupgrade image and packaged kernel module bundles for ${DEVICE_LABEL}."
+          echo "Automated build for **${DEVICE_LABEL}**."
           echo ""
-          echo "### Build Information"
-          echo "- Source Repository: [${REPO_URL}](${REPO_URL})"
-          echo "- Source Branch: ${REPO_BRANCH}"
-          echo "- Target Device: ${DEVICE_LABEL}"
-          echo "- Firmware Version: ${FIRMWARE_VERSION}"
-          echo "- Kernel Package Version: ${KERNEL_PKG_VERSION}"
-          echo "- Build Time: ${BUILD_TIME}"
-          echo "- Build Configuration: [View config file](${CONFIG_FILE_URL})"
-          echo "- Build Log: [View workflow run](${BUILD_LOG_URL})"
+          echo "### 📌 Build Information"
+          echo "- **Source Repository:** [${REPO_URL}](${REPO_URL})"
+          echo "- **Source Branch:** \`${REPO_BRANCH}\`"
+          echo "- **Target Device:** \`${DEVICE_LABEL}\`"
+          echo "- **Firmware Version:** \`${FIRMWARE_VERSION}\`"
+          echo "- **Kernel Package Version:** \`${KERNEL_PKG_VERSION}\`"
+          echo "- **Build Time:** \`${BUILD_TIME}\`"
+          echo "- **Build Configuration:** [View config file](${CONFIG_FILE_URL})"
+          echo "- **Build Log:** [View workflow run](${BUILD_LOG_URL})"
           echo ""
-          echo "### Included Assets"
-          echo "- Sysupgrade firmware image"
-          echo "- Packaged firmware and kmod repository (.tar.gz)"
-          echo "- Packaged firmware and kmod repository (.zip)"
+          echo "### 📦 Included Assets"
+          echo "- **Sysupgrade firmware image**"
+          echo "- **Full kmods repository bundle (.tar.gz)**"
+          echo "- **Full kmods repository bundle (.zip)**"
           echo ""
-          echo "### Bundle Name"
-          echo "- ${ARCHIVE_ROOT}"
+          echo "### 📁 Kmods Bundle Name"
+          echo "- \`${ARCHIVE_ROOT}\`"
+          echo ""
+          echo "### ⚠️ Notes"
+          echo "- The compressed bundles contain only the packaged \`kmods/\` repository."
+          echo "- The firmware image is released separately as the sysupgrade asset."
+          echo "- Kernel modules must match the same kernel package version."
         } > release.txt
 
         echo "status=success" >> "$GITHUB_OUTPUT"
 
-    - name: 🚀 Upload sysupgrade firmware and bundles to release
+    - name: 🚀 Upload sysupgrade firmware and kmods bundles to release
       uses: softprops/action-gh-release@v2
       if: steps.tag.outputs.status == 'success' && github.event.inputs.publish_release == 'true' && !cancelled()
       env:
