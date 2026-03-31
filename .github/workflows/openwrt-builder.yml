@@ -16,6 +16,11 @@ on:
   repository_dispatch:
   workflow_dispatch:
     inputs:
+      ssh:
+        description: 'Enable make menuconfig'
+        required: true
+        default: false
+        type: boolean
       publish_release:
         description: 'Publish to Releases'
         required: true
@@ -44,9 +49,96 @@ env:
   TZ: Asia/Shanghai
 
 jobs:
+  menuconfig:
+    name: Menuconfig & Push
+    if: github.event.inputs.ssh == 'true'
+    runs-on: ubuntu-22.04
+    defaults:
+      run:
+        shell: bash
+        working-directory: /workdir
+
+    steps:
+    - name: 📥 Checkout repository
+      uses: actions/checkout@v4
+
+    - name: 🧰 Initialize build environment
+      env:
+        DEBIAN_FRONTEND: noninteractive
+      run: |
+        sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+        sudo docker image prune --all --force
+        sudo -E apt-get -qq update
+        sudo -E apt-get -qq install \
+          ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache cmake cpio curl device-tree-compiler fastjar flex gawk gettext \
+          gcc-multilib g++-multilib git gperf haveged help2man intltool libc6-dev-i386 \
+          libelf-dev libfuse-dev libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev \
+          libmpfr-dev libncurses5-dev libncursesw5-dev libpython3-dev libreadline-dev \
+          libssl-dev libtool lrzsz mkisofs msmtp ninja-build p7zip p7zip-full patch \
+          pkgconf python3 python3-pyelftools python3-setuptools qemu-utils rsync scons \
+          squashfs-tools subversion swig texinfo uglifyjs upx-ucl unzip vim wget xmlto \
+          xxd zlib1g-dev
+        sudo -E apt-get -qq autoremove --purge
+        sudo -E apt-get -qq clean
+        sudo timedatectl set-timezone "$TZ"
+        sudo mkdir -p /workdir
+        sudo chown "$USER:$USER" /workdir
+
+    - name: 📦 Clone source code
+      run: |
+        df -hT "$PWD"
+        git clone "$REPO_URL" -b "$REPO_BRANCH" openwrt
+        ln -sf /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
+
+    - name: 🧩 Load custom feeds
+      run: |
+        [ -e "$GITHUB_WORKSPACE/$FEEDS_CONF" ] && mv "$GITHUB_WORKSPACE/$FEEDS_CONF" openwrt/feeds.conf.default
+        [ -e "$GITHUB_WORKSPACE/$DIY_P1_SH" ] && chmod +x "$GITHUB_WORKSPACE/$DIY_P1_SH"
+        cd openwrt
+        [ -e "$GITHUB_WORKSPACE/$DIY_P1_SH" ] && "$GITHUB_WORKSPACE/$DIY_P1_SH"
+
+    - name: 🔄 Update feeds
+      run: cd openwrt && ./scripts/feeds update -a
+
+    - name: 📚 Install feeds
+      run: cd openwrt && ./scripts/feeds install -a
+
+    - name: ⚙️ Load custom configuration
+      run: |
+        [ -e "$GITHUB_WORKSPACE/files" ] && mv "$GITHUB_WORKSPACE/files" openwrt/files
+        [ -e "$GITHUB_WORKSPACE/$CONFIG_FILE" ] && cp "$GITHUB_WORKSPACE/$CONFIG_FILE" openwrt/.config
+        [ -e "$GITHUB_WORKSPACE/$DIY_P2_SH" ] && chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
+        cd openwrt
+        [ -e "$GITHUB_WORKSPACE/$DIY_P2_SH" ] && "$GITHUB_WORKSPACE/$DIY_P2_SH"
+        make defconfig
+
+    - name: 🔐 SSH connection to Actions
+      uses: mxschmitt/action-tmate@v3
+      timeout-minutes: 15
+
+    - name: 💾 Save config and push
+      run: |
+        [ -e "openwrt/.config" ] || { echo "openwrt/.config not found"; exit 1; }
+        cp openwrt/.config "$GITHUB_WORKSPACE/$CONFIG_FILE"
+
+        cd "$GITHUB_WORKSPACE"
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        git add "$CONFIG_FILE"
+        if git diff --cached --quiet; then
+          echo "No changes to commit."
+        else
+          git commit -m "Update config: $CONFIG_FILE"
+          git push origin HEAD:${GITHUB_REF_NAME}
+        fi
+
   build:
     name: Build Firmware
     runs-on: ubuntu-22.04
+    needs: menuconfig
+    if: always() && (needs.menuconfig.result == 'success' || needs.menuconfig.result == 'skipped')
 
     steps:
     - name: 📥 Checkout repository
