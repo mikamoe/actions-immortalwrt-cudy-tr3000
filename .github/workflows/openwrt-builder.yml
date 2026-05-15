@@ -287,7 +287,7 @@ jobs:
 
     - name: 🏷️ Generate release tag and notes
       id: tag
-      if: env.UPLOAD_RELEASE == 'true' && github.event.inputs.publish_release == 'true' && !cancelled()
+      if: success() && env.UPLOAD_RELEASE == 'true' && github.event.inputs.publish_release == 'true' && steps.organize.outputs.status == 'success' && !cancelled()
       run: |
         echo "release_tag=$(date +"%Y.%m.%d-%H%M%S")" >> "$GITHUB_OUTPUT"
 
@@ -314,7 +314,7 @@ jobs:
 
     - name: 🚀 Upload sysupgrade firmware to release
       uses: softprops/action-gh-release@v3
-      if: steps.tag.outputs.status == 'success' && github.event.inputs.publish_release == 'true' && !cancelled()
+      if: success() && steps.tag.outputs.status == 'success' && github.event.inputs.publish_release == 'true' && steps.organize.outputs.status == 'success' && !cancelled()
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       with:
