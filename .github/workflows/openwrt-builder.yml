@@ -21,6 +21,16 @@ on:
         required: true
         default: false
         type: boolean
+      repo_url:
+        description: 'Source repository URL'
+        required: true
+        default: 'https://github.com/mikamoe/immortalwrt-mt798x-rebase'
+        type: string
+      repo_branch:
+        description: 'Source repository branch'
+        required: true
+        default: '25.12'
+        type: string
       publish_release:
         description: 'Publish to Releases'
         required: true
@@ -37,8 +47,8 @@ permissions:
   actions: write
 
 env:
-  REPO_URL: https://github.com/mikamoe/immortalwrt-mt798x-rebase
-  REPO_BRANCH: 25.12
+  REPO_URL: ${{ github.event.inputs.repo_url || 'https://github.com/mikamoe/immortalwrt-mt798x-rebase' }}
+  REPO_BRANCH: ${{ github.event.inputs.repo_branch || '25.12' }}
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: cudy_tr3000-256mb-v1.config
   DIY_P1_SH: diy-part1.sh
