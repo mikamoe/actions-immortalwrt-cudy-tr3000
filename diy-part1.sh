@@ -18,5 +18,8 @@
 #echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
 echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
 
+mkdir -p files/etc/apk/keys
+wget -O files/etc/apk/keys/nikki.pem https://nikkinikki.pages.dev/public-key.pem
+
 git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
 git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
