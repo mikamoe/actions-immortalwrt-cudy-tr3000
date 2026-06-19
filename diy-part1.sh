@@ -10,26 +10,28 @@
 # See /LICENSE for more information.
 #
 
-# Uncomment a feed source
-#sed -i 's/^#\(.*helloworld\)/\1/' feeds.conf.default
-
 # Add a feed source
-#echo 'src-git helloworld https://github.com/fw876/helloworld' >>feeds.conf.default
-#echo 'src-git passwall https://github.com/xiaorouji/openwrt-passwall' >>feeds.conf.default
-# nikki
 echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
+
+# Prepare files directory
 mkdir -p files/etc/apk/keys
-wget -O files/etc/apk/keys/nikki.pem https://nikkinikki.pages.dev/public-key.pem
-
-# luci-theme-aurora & luci-app-aurora-config
-git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
-git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
-
-# luci-app-quickfile
-git clone https://github.com/sbwml/luci-app-quickfile package/luci-app-quickfile
-
+mkdir -p files/etc/apk/repositories.d
 mkdir -p files/etc/uci-defaults
 
+# Download nikki release key
+wget -O files/etc/apk/keys/nikki.pem https://nikkinikki.pages.dev/public-key.pem
+
+# Add nikki third-party apk repository
+cat > files/etc/apk/repositories.d/customfeeds.list <<'EOF'
+https://nikkinikki.pages.dev/openwrt-25.12/aarch64_cortex-a53/nikki/packages.adb
+EOF
+
+# Clone custom packages
+git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
+git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
+git clone https://github.com/sbwml/luci-app-quickfile package/luci-app-quickfile
+
+# Nginx initialization script
 cat > files/etc/uci-defaults/99-nginx-init <<'EOF'
 #!/bin/sh
 
