@@ -24,7 +24,7 @@ on:
       repo_url:
         description: 'Source repository URL'
         required: true
-        default: 'https://github.com/mikamoe/immortalwrt-mt798x-rebase'
+        default: 'https://github.com/chasey-dev/immortalwrt-mt798x-rebase'
         type: string
       repo_branch:
         description: 'Source repository branch'
