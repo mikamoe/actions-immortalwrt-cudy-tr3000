@@ -31,6 +31,8 @@ https://openwrt.eamonxg.fun/snapshots/apk/packages.adb
 EOF
 
 # Clone custom packages
+git clone https://github.com/eamonxg/luci-theme-aurora package/luci-theme-aurora
+git clone https://github.com/eamonxg/luci-app-aurora-config package/luci-app-aurora-config
 git clone https://github.com/sbwml/luci-app-quickfile package/luci-app-quickfile
 
 # Nginx initialization script
