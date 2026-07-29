@@ -47,7 +47,7 @@ permissions:
   actions: write
 
 env:
-  REPO_URL: ${{ github.event.inputs.repo_url || 'https://github.com/mikamoe/immortalwrt-mt798x-rebase' }}
+  REPO_URL: ${{ github.event.inputs.repo_url || 'https://github.com/chasey-dev/immortalwrt-mt798x-rebase' }}
   REPO_BRANCH: ${{ github.event.inputs.repo_branch || '25.12' }}
   FEEDS_CONF: feeds.conf.default
   CONFIG_FILE: cudy_tr3000-256mb-v1.config
@@ -91,7 +91,8 @@ jobs:
           xxd zlib1g-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
+        sudo ln -sf /usr/share/zoneinfo/$TZ /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone
         sudo mkdir -p /workdir
         sudo chown "$USER:$USER" /workdir
 
@@ -123,7 +124,7 @@ jobs:
         [ -e "$GITHUB_WORKSPACE/$DIY_P2_SH" ] && "$GITHUB_WORKSPACE/$DIY_P2_SH"
         make defconfig
 
-    - name: 🔐 SSH connection to Actions
+            - name: 🔐 SSH connection to Actions
       uses: mxschmitt/action-tmate@v3
       timeout-minutes: 15
 
@@ -173,7 +174,8 @@ jobs:
           xxd zlib1g-dev
         sudo -E apt-get -qq autoremove --purge
         sudo -E apt-get -qq clean
-        sudo timedatectl set-timezone "$TZ"
+        sudo ln -sf /usr/share/zoneinfo/$TZ /etc/localtime
+        echo "$TZ" | sudo tee /etc/timezone
         sudo mkdir -p /workdir
         sudo chown "$USER:$USER" /workdir
 
@@ -235,7 +237,6 @@ jobs:
         echo "FILE_DATE=_$(date +"%Y%m%d%H%M")" >> "$GITHUB_ENV"
         echo "BUILD_TIME=$(date +"%Y-%m-%d %H:%M:%S %Z")" >> "$GITHUB_ENV"
 
-        # Firmware Version
         VERSION_FILE="$(find bin/targets -type f -name 'version.buildinfo' | head -n 1)"
         if [ -n "$VERSION_FILE" ]; then
           FIRMWARE_VERSION="$(tr -d '\n' < "$VERSION_FILE" | sed 's/[[:space:]]*$//')"
@@ -244,7 +245,6 @@ jobs:
         fi
         echo "FIRMWARE_VERSION=$FIRMWARE_VERSION" >> "$GITHUB_ENV"
 
-        # Kernel Package Version
         KERNEL_PKG_FILE="$(find bin/targets -type f \( -name 'kernel_*.apk' -o -name 'kernel-*.apk' \) | head -n 1)"
         if [ -n "$KERNEL_PKG_FILE" ]; then
           KERNEL_PKG_VERSION="$(basename "$KERNEL_PKG_FILE" .apk)"
