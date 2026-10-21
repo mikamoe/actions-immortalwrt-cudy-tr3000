@@ -10,8 +10,13 @@
 # See /LICENSE for more information.
 #
 
-# Add a feed source
+# Add feed sources
 echo "src-git nikki https://github.com/nikkinikki-org/OpenWrt-nikki.git;main" >> feeds.conf.default
+echo "src-git meowx https://github.com/mmwx-group/meowx-openwrt.git;main" >> feeds.conf.default
+
+# Clone custom packages
+git clone https://github.com/eamonxg/luci-theme-aurora.git package/luci-theme-aurora
+git clone https://github.com/eamonxg/luci-app-aurora-config.git package/luci-app-aurora-config
 
 # Prepare files directory
 mkdir -p files/etc/apk/keys
@@ -26,7 +31,7 @@ wget -O files/etc/apk/keys/eamonxg.pem https://openwrt.eamonxg.fun/eamonxg.pem
 # Download MeowX release key
 wget -O files/etc/apk/keys/meowx.pem https://dl.miaomiaowux.com/meowx/openwrt/public-key.pem
 
-# Add third-party apk repositories
+# Add third-party apk repositories (for updates after flashing)
 cat > files/etc/apk/repositories.d/customfeeds.list <<'EOF'
 https://nikkinikki.pages.dev/openwrt-25.12/aarch64_cortex-a53/nikki/packages.adb
 https://openwrt.eamonxg.fun/snapshots/apk/packages.adb
